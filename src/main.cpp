@@ -34,6 +34,20 @@ void setup() {
   Serial.println((versiondata >> 8) & 0xFF, DEC);
 }
 
+void readNdefTextMessage(uint8_t *buf) {
+  // Assumes NDEF message starts at buf[0]
+  uint8_t textLen = buf[7]; // The length of the text payload
+  char message[128];
+
+  // Copy the text payload (starting at buf[8] where the text starts)
+  memcpy(message, &buf[8], textLen);
+  message[textLen] = '\0'; // Null-terminate the string
+
+  // Print the NDEF text message
+  Serial.print("Text message: ");
+  Serial.println(message);
+}
+
 void loop() {
   uint8_t success;
   uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0}; // Buffer to store the returned UID
@@ -45,75 +59,50 @@ void loop() {
   success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
 
   if (success) {
-    // Display some basic information about the card
-    Serial.println("Found an ISO14443A card");
-    Serial.print("  UID Length: ");
+    // Found a card
+    Serial.println("Found an NFC tag!");
+
+    // Print UID
+    Serial.print("UID Length: ");
     Serial.print(uidLength, DEC);
     Serial.println(" bytes");
-    Serial.print("  UID Value: ");
-    nfc.PrintHex(uid, uidLength);
+    Serial.print("UID Value: ");
+    for (uint8_t i = 0; i < uidLength; i++) {
+      Serial.print(" 0x");
+      Serial.print(uid[i], HEX);
+    }
     Serial.println("");
 
-    if (uidLength == 4) {
-      // We probably have a Mifare Classic card ...
-      Serial.println("Seems to be a Mifare Classic card (4 byte UID)");
+    // Attempt to read data from the card
+    uint8_t ndefBuf[128]; // Buffer to hold NDEF data
+    uint8_t ndefSize = sizeof(ndefBuf);
 
-      // Now we need to try to authenticate it for read/write access
-      // Try with the factory default KeyA: 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
-      Serial.println("Trying to authenticate block 4 with default KEYA value");
-      uint8_t keya[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
-      // Start with block 4 (the first block of sector 1) since sector 0
-      // contains the manufacturer data and it's probably better just
-      // to leave it alone unless you know what you're doing
-      success = nfc.mifareclassic_AuthenticateBlock(uid, uidLength, 4, 0, keya);
-
-      if (success) {
-        Serial.println("Sector 1 (Blocks 4..7) has been authenticated");
-        uint8_t data[16];
-
-        // If you want to write something to block 4 to test with, uncomment
-        // the following line and this text should be read back in a minute
-        // memcpy(data, (const uint8_t[]){ 'a', 'd', 'a', 'f', 'r', 'u', 'i', 't', '.', 'c', 'o', 'm', 0, 0, 0, 0 }, sizeof data);
-        //  success = nfc.mifareclassic_WriteDataBlock (4, data);
-
-        // Try to read the contents of block 4
-        success = nfc.mifareclassic_ReadDataBlock(4, data);
-
-        if (success) {
-          // Data seems to have been read ... spit it out
-          Serial.println("Reading Block 4:");
-          nfc.PrintHexChar(data, 16);
-          Serial.println("");
-
-          // Wait a bit before reading the card again
-          delay(1000);
-        } else {
-          Serial.println("Ooops ... unable to read the requested block.  Try another key?");
-        }
-      } else {
-        Serial.println("Ooops ... authentication failed: Try another key?");
+    success = nfc.ntag2xx_ReadPage(4, ndefBuf);
+    if (success) {
+      Serial.println("NDEF Data found:");
+      for (uint8_t i = 0; i < ndefSize; i++) {
+        Serial.print(ndefBuf[i], HEX);
+        Serial.print(" ");
       }
+      Serial.println();
+
+      // Attempt to decode the NDEF message if it is a text message
+      if (ndefBuf[0] == 0x03) { // 0x03 means NDEF format
+        Serial.println("Reading NDEF text message...");
+        readNdefTextMessage(ndefBuf);
+      } else {
+        Serial.println("NDEF message not recognized.");
+      }
+    } else {
+      Serial.println("Failed to read NDEF data.");
     }
 
-    if (uidLength == 7) {
-      // We probably have a Mifare Ultralight card ...
-      Serial.println("Seems to be a Mifare Ultralight tag (7 byte UID)");
+    const char *url = "adafruit.com/blog/";
+    uint8_t ndefprefix = NDEF_URIPREFIX_HTTP_WWWDOT;
 
-      // Try to read the first general-purpose user page (#4)
-      Serial.println("Reading page 4");
-      uint8_t data[32];
-      success = nfc.mifareultralight_ReadPage(4, data);
-      if (success) {
-        // Data seems to have been read ... spit it out
-        nfc.PrintHexChar(data, 4);
-        Serial.println("");
+    Serial.println(nfc.mifareclassic_WriteNDEFURI(1, ndefprefix, url));
 
-        // Wait a bit before reading the card again
-        delay(1000);
-      } else {
-        Serial.println("Ooops ... unable to read the requested page!?");
-      }
-    }
+    // Wait a bit before scanning again
+    delay(1000);
   }
 }
