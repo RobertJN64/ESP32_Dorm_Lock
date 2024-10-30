@@ -11,5 +11,11 @@ void setup() {
 }
 
 void loop() {
-  get_card_data(); // TODO - check if purdue ID
+  if (get_card_data()) {
+    Serial.println("Valid code tapped - unlocking!");
+    unlock();
+    delay(5000);
+    lock();
+    delay(100);
+  }
 }

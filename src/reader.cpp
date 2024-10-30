@@ -1,7 +1,22 @@
-#include <SPI.h>
+#include <Wire.h>
 #include <Adafruit_PN532.h>
 
-Adafruit_PN532 nfc(22);
+char correct_code[] = {'r', 'o', 'b', 'e', 'r', 't'};
+
+Adafruit_PN532 nfc(2, 3);
+uint8_t message[] = {
+    0x00, // standard command
+    0xA4, // instruction (read)
+    0x04, // p1
+    0x00, // p2
+
+    0x07, // AID len
+
+    0xA0, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, // AID
+
+    0x00 // terminator
+};
+uint8_t response[32];
 
 void nfc_init() {
   nfc.begin();
@@ -23,49 +38,36 @@ void nfc_init() {
   nfc.begin();
 }
 
-uint8_t message[13];
+bool get_card_data() {
+  bool got_valid_code = false;
 
-void get_card_data(void) {
-  uint8_t i;
-
-  // Serial.println("Listening...");
   if (nfc.inListPassiveTarget()) {
-    // Serial.println("Something's there...");
     while (true) {
-      message[0] = 0x00;
-      message[1] = 0xA4;
-      message[2] = 0x04;
-      message[3] = 0x00;
+      uint8_t responseLength = sizeof(response); // this must be initialized
+      if (nfc.inDataExchange(message, sizeof(message), response, &responseLength)) {
 
-      message[4] = 0x07;
+        // check len match
+        bool valid_code = responseLength == sizeof(correct_code);
 
-      message[5] = 0xA0;
-      message[6] = 0x00;
-      message[7] = 0x00;
-      message[8] = 0x01;
-      message[9] = 0x02;
-      message[10] = 0x03;
-      message[11] = 0x04;
-
-      message[12] = 0x00;
-
-      uint8_t responseLength = sizeof(message);
-      if (nfc.inDataExchange(message, responseLength, message, &responseLength)) {
-        Serial.print("MESSAGE! ");
-        Serial.print(responseLength);
-        Serial.println();
-        for (int i = 0; i < responseLength; i++) {
-          Serial.print(message[i], HEX);
-          Serial.print(" ");
+        // check each char
+        if (valid_code) {
+          for (int i = 0; i < responseLength; i++) {
+            if (response[i] != correct_code[i]) {
+              valid_code = false;
+            }
+          }
         }
-        Serial.println();
+
+        // update status
+        Serial.print("Recieved data. Valid: ");
+        Serial.println(valid_code);
+        got_valid_code = got_valid_code || valid_code;
         delay(10);
+
       } else {
-        Serial.println("It's gone...");
-        break;
+        break; // device now out of range
       }
     }
-  } else {
-    Serial.print("Trying again...");
   }
+  return got_valid_code; // no device
 }
