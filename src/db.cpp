@@ -49,6 +49,7 @@ void rm_id(String key) {
       Serial.print(i);
       Serial.println(". Removing...");
       ids_json.remove(i);
+      i -= 1; // b/c elem removed
     }
   }
 
